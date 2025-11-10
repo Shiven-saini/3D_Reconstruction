@@ -1,0 +1,11 @@
+[project]
+name = "3d-reconstruction"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "opencv-python>=4.12.0.88",
+    "tqdm>=4.67.1",
+    "ultralytics>=8.3.227",
+]
