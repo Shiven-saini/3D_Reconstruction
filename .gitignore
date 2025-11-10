@@ -8,3 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Datasets
+datasets/face
+datasets/License_Plate
+
