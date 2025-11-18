@@ -66,6 +66,79 @@ def apply_pixelation(image, x1, y1, x2, y2, blocks=10):
     
     return image
 
+def apply_circular_feathered_blur(image, x1, y1, x2, y2, kernel_size=99, feather_amount=0.1):
+    """
+    Apply circular feathered blur to a region of interest (for faces)
+    Creates a more natural-looking blur with soft edges using an elliptical mask
+    
+    Args:
+        image: Input image
+        x1, y1: Top-left coordinates
+        x2, y2: Bottom-right coordinates
+        kernel_size: Blur kernel size (must be odd, higher = stronger blur)
+        feather_amount: Amount of feathering (0.0-1.0), controls the gradient transition
+    """
+    import numpy as np
+    
+    # Ensure kernel size is odd
+    if kernel_size % 2 == 0:
+        kernel_size += 1
+    
+    # Extract ROI
+    roi = image[y1:y2, x1:x2].copy()
+    h, w = roi.shape[:2]
+    
+    if h == 0 or w == 0:
+        return image
+    
+    # Apply strong Gaussian blur to entire ROI
+    blurred_roi = cv2.GaussianBlur(roi, (kernel_size, kernel_size), 0)
+    
+    # Create elliptical mask with feathering
+    mask = np.zeros((h, w), dtype=np.float32)
+    
+    # Center of the ellipse
+    center_x, center_y = w // 2, h // 2
+    
+    # Ellipse radii - expanded to cover ~90% of the bounding box
+    # Using 1.1 multiplier to extend slightly beyond the box for better coverage
+    radius_x = (w / 2) * 1.1
+    radius_y = (h / 2) * 1.1
+    
+    # Create coordinates grid
+    y_coords, x_coords = np.ogrid[:h, :w]
+    
+    # Calculate normalized distance from center (elliptical)
+    distances = np.sqrt(((x_coords - center_x) / radius_x) ** 2 + 
+                       ((y_coords - center_y) / radius_y) ** 2)
+    
+    # Create feathered mask
+    # Inner region (fully blurred): distance < (1 - feather_amount)
+    # Feather region: distance between (1 - feather_amount) and 1.0
+    # Outer region: distance > 1.0 (no blur)
+    inner_threshold = 1.0 - feather_amount
+    
+    # Full blur in the center
+    mask[distances <= inner_threshold] = 1.0
+    
+    # Feathered transition
+    feather_region = (distances > inner_threshold) & (distances <= 1.0)
+    if feather_amount > 0:
+        # Smooth cosine transition for more natural feathering
+        transition = (distances[feather_region] - inner_threshold) / feather_amount
+        mask[feather_region] = np.cos(transition * np.pi / 2) ** 2
+    
+    # Expand mask to 3 channels for color image
+    mask_3d = np.stack([mask, mask, mask], axis=2)
+    
+    # Blend blurred and original ROI using the mask
+    result_roi = (blurred_roi * mask_3d + roi * (1 - mask_3d)).astype(np.uint8)
+    
+    # Replace original ROI with blended version
+    image[y1:y2, x1:x2] = result_roi
+    
+    return image
+
 # Get all image files from testing directory
 image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp']
 image_files = []
@@ -113,8 +186,16 @@ for img_path in image_files:
                 
                 print(f"    - Blurring {cls_name} (confidence: {conf:.2f})")
                 
-                # Apply Gaussian blur (choose one method)
-                image = apply_gaussian_blur(image, x1, y1, x2, y2, kernel_size=BLUR_STRENGTH)
+                # Apply different blur based on object type
+                if cls_name.lower() == 'face':
+                    # Use circular feathered blur for faces (more natural looking)
+                    # 90% ellipse coverage with 10% feathering on edges
+                    image = apply_circular_feathered_blur(image, x1, y1, x2, y2, 
+                                                         kernel_size=BLUR_STRENGTH, 
+                                                         feather_amount=0.1)
+                else:
+                    # Use standard Gaussian blur for license plates
+                    image = apply_gaussian_blur(image, x1, y1, x2, y2, kernel_size=BLUR_STRENGTH)
                 
                 # OR use pixelation instead (uncomment to use)
                 # image = apply_pixelation(image, x1, y1, x2, y2, blocks=8)
