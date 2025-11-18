@@ -12,4 +12,4 @@ wheels/
 # Datasets
 datasets/face
 datasets/License_Plate
-
+COLMAP/datasets/images_128/
